@@ -2,12 +2,6 @@
 
 A beautiful Android-first system information and resource monitor built entirely with **Material Design 3 (Material You)** principles.
 
-Live demo → **[your-username.github.io/system-monitor](https://your-username.github.io/system-monitor)**
-
-![SysMonitor Preview](https://img.shields.io/badge/Material%20You-Design%203-006874?style=for-the-badge&logo=android&logoColor=white)
-![GitHub Pages](https://img.shields.io/badge/GitHub%20Pages-Ready-4CAF50?style=for-the-badge&logo=github)
-![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)
-
 ---
 
 ## ✨ Features
