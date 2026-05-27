@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#006874">
+  <meta name="description" content="Android-first system information and resource monitor built with Material You design">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <title>SysMonitor — Material You</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Google+Sans+Mono&display=swap" rel="stylesheet">
+</head>
+<body>
+
+  <!-- Status Bar -->
+  <div class="status-bar">
+    <span id="status-time">9:41</span>
+    <div class="status-icons">
+      <i class="ti ti-wifi" aria-hidden="true"></i>
+      <i class="ti ti-signal-3g" aria-hidden="true"></i>
+      <i class="ti ti-battery-3" aria-hidden="true"></i>
+    </div>
+  </div>
+
+  <!-- Top App Bar -->
+  <div class="top-app-bar">
+    <button class="app-bar-icon" aria-label="Menu" onclick="toggleDrawer()">
+      <i class="ti ti-menu-2"></i>
+    </button>
+    <h1 class="app-bar-title">System Monitor</h1>
+    <span class="live-dot" title="Live updates active"></span>
+    <div class="app-bar-avatar" aria-label="User">A</div>
+  </div>
+
+  <!-- Navigation Drawer (hidden by default) -->
+  <div class="drawer-overlay" id="drawer-overlay" onclick="toggleDrawer()"></div>
+  <nav class="drawer" id="drawer" aria-label="Navigation">
+    <div class="drawer-header">
+      <div class="drawer-logo"><i class="ti ti-device-mobile-analytics"></i></div>
+      <div>
+        <div class="drawer-app-name">SysMonitor</div>
+        <div class="drawer-version">v1.0.0 · Material You</div>
+      </div>
+    </div>
+    <div class="drawer-items">
+      <a class="drawer-item active" href="#overview"><i class="ti ti-home"></i>Overview</a>
+      <a class="drawer-item" href="#resources"><i class="ti ti-cpu"></i>Resources</a>
+      <a class="drawer-item" href="#network"><i class="ti ti-wifi"></i>Network</a>
+      <a class="drawer-item" href="#processes"><i class="ti ti-list"></i>Processes</a>
+      <a class="drawer-item" href="#sensors"><i class="ti ti-radar"></i>Sensors</a>
+    </div>
+    <div class="drawer-footer">
+      <button class="drawer-item" onclick="toggleTheme()"><i class="ti ti-moon"></i>Toggle theme</button>
+    </div>
+  </nav>
+
+  <!-- Main Content -->
+  <main class="scroll-area" id="main-content">
+
+    <!-- Section: Overview -->
+    <section id="overview">
+
+      <!-- Hero Device Card -->
+      <div class="hero-card">
+        <div class="hero-bg-circle"></div>
+        <div class="hero-device-name" id="device-name">Pixel 9 Pro</div>
+        <div class="hero-model" id="device-model">Android 15 · Tensor G4 · Build UPB5.241205.006</div>
+        <div class="hero-chips">
+          <span class="chip"><i class="ti ti-cpu"></i><span id="chip-cpu">Tensor G4</span></span>
+          <span class="chip"><i class="ti ti-database"></i><span id="chip-ram">12 GB RAM</span></span>
+          <span class="chip"><i class="ti ti-device-mobile"></i><span id="chip-stor">256 GB</span></span>
+          <span class="chip"><i class="ti ti-brand-android"></i>Android 15</span>
+        </div>
+      </div>
+
+      <!-- Quick Metrics -->
+      <div class="cards-row">
+        <div class="metric-card">
+          <i class="ti ti-thermometer mc-icon" aria-hidden="true"></i>
+          <div class="mc-label">CPU Temp</div>
+          <div class="mc-value" id="cpu-temp">38°C</div>
+          <div class="mc-sub">Normal range</div>
+        </div>
+        <div class="metric-card accent">
+          <i class="ti ti-battery-charging mc-icon" aria-hidden="true"></i>
+          <div class="mc-label">Battery</div>
+          <div class="mc-value" id="bat-pct">84%</div>
+          <div class="mc-sub" id="bat-time">~6h 20m left</div>
+        </div>
+      </div>
+
+      <div class="cards-row">
+        <div class="metric-card">
+          <i class="ti ti-clock mc-icon" aria-hidden="true"></i>
+          <div class="mc-label">Uptime</div>
+          <div class="mc-value" id="uptime-val">3h 42m</div>
+          <div class="mc-sub">Since last boot</div>
+        </div>
+        <div class="metric-card">
+          <i class="ti ti-activity mc-icon" aria-hidden="true"></i>
+          <div class="mc-label">Processes</div>
+          <div class="mc-value" id="proc-count">148</div>
+          <div class="mc-sub">12 user apps</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section: Resources -->
+    <section id="resources">
+      <div class="section-title"><i class="ti ti-gauge" aria-hidden="true"></i>Core utilization</div>
+      <div class="gauges-row">
+        <div class="gauge-card">
+          <svg class="gauge-svg" width="80" height="80" viewBox="0 0 80 80" role="img" aria-label="CPU utilization gauge">
+            <circle cx="40" cy="40" r="32" fill="none" stroke-width="8" class="gauge-track"/>
+            <circle cx="40" cy="40" r="32" fill="none" stroke-width="8" stroke="#006874" stroke-linecap="round"
+              transform="rotate(-90 40 40)" id="cpu-ring"
+              stroke-dasharray="201.1" stroke-dashoffset="76.4"/>
+            <text x="40" y="46" text-anchor="middle" font-size="15" font-weight="700"
+              fill="var(--md-on-surface)" font-family="'Google Sans',sans-serif" id="cpu-gauge-text">62%</text>
+          </svg>
+          <div class="gauge-label">CPU</div>
+        </div>
+        <div class="gauge-card">
+          <svg class="gauge-svg" width="80" height="80" viewBox="0 0 80 80" role="img" aria-label="RAM utilization gauge">
+            <circle cx="40" cy="40" r="32" fill="none" stroke-width="8" class="gauge-track"/>
+            <circle cx="40" cy="40" r="32" fill="none" stroke-width="8" stroke="#2E7D32" stroke-linecap="round"
+              transform="rotate(-90 40 40)" id="ram-ring"
+              stroke-dasharray="201.1" stroke-dashoffset="52.3"/>
+            <text x="40" y="46" text-anchor="middle" font-size="15" font-weight="700"
+              fill="var(--md-on-surface)" font-family="'Google Sans',sans-serif" id="ram-gauge-text">74%</text>
+          </svg>
+          <div class="gauge-label">RAM</div>
+        </div>
+        <div class="gauge-card">
+          <svg class="gauge-svg" width="80" height="80" viewBox="0 0 80 80" role="img" aria-label="GPU utilization gauge">
+            <circle cx="40" cy="40" r="32" fill="none" stroke-width="8" class="gauge-track"/>
+            <circle cx="40" cy="40" r="32" fill="none" stroke-width="8" stroke="#E65100" stroke-linecap="round"
+              transform="rotate(-90 40 40)" id="gpu-ring"
+              stroke-dasharray="201.1" stroke-dashoffset="118.6"/>
+            <text x="40" y="46" text-anchor="middle" font-size="15" font-weight="700"
+              fill="var(--md-on-surface)" font-family="'Google Sans',sans-serif" id="gpu-gauge-text">41%</text>
+          </svg>
+          <div class="gauge-label">GPU</div>
+        </div>
+      </div>
+
+      <div class="section-title"><i class="ti ti-server" aria-hidden="true"></i>Resource allocation</div>
+      <div class="resource-card" id="resource-list">
+        <!-- Rendered by JS -->
+      </div>
+    </section>
+
+    <!-- Section: Network -->
+    <section id="network">
+      <div class="section-title"><i class="ti ti-wifi" aria-hidden="true"></i>Network</div>
+      <div class="net-card">
+        <div class="net-header">
+          <div>
+            <div class="net-ssid" id="net-ssid">HomeNetwork_5G</div>
+            <div class="net-detail" id="net-detail">192.168.1.42 · WiFi 6 · -52 dBm</div>
+          </div>
+          <span class="status-badge connected">Connected</span>
+        </div>
+        <div class="net-grid">
+          <div class="net-stat">
+            <div class="net-val" id="net-dl">↓ 42.8</div>
+            <div class="net-lbl">Mbps Down</div>
+          </div>
+          <div class="net-stat">
+            <div class="net-val" id="net-ul">↑ 18.3</div>
+            <div class="net-lbl">Mbps Up</div>
+          </div>
+          <div class="net-stat">
+            <div class="net-val" id="net-lat">12 ms</div>
+            <div class="net-lbl">Latency</div>
+          </div>
+          <div class="net-stat">
+            <div class="net-val" id="net-data">3.2 GB</div>
+            <div class="net-lbl">Used today</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sparkline chart -->
+      <div class="section-title" style="margin-top:4px"><i class="ti ti-chart-line" aria-hidden="true"></i>Throughput history</div>
+      <div class="chart-card">
+        <canvas id="netChart" role="img" aria-label="Network throughput history chart"></canvas>
+      </div>
+    </section>
+
+    <!-- Section: Processes -->
+    <section id="processes">
+      <div class="section-title"><i class="ti ti-list" aria-hidden="true"></i>Top processes</div>
+      <div class="proc-card">
+        <div class="proc-header">
+          <span class="proc-title">By CPU usage</span>
+          <span class="proc-badge" id="proc-total">148 running</span>
+        </div>
+        <div id="proc-list"></div>
+      </div>
+    </section>
+
+    <!-- Section: Sensors -->
+    <section id="sensors">
+      <div class="section-title"><i class="ti ti-radar" aria-hidden="true"></i>Sensors &amp; display</div>
+      <div class="cards-row">
+        <div class="metric-card">
+          <i class="ti ti-sun mc-icon" aria-hidden="true"></i>
+          <div class="mc-label">Display</div>
+          <div class="mc-value" style="font-size:18px">120 Hz</div>
+          <div class="mc-sub">2992×1344 · 1600 nits</div>
+        </div>
+        <div class="metric-card accent">
+          <i class="ti ti-brand-bluetooth mc-icon" aria-hidden="true"></i>
+          <div class="mc-label">Bluetooth</div>
+          <div class="mc-value" style="font-size:16px">BT 5.3</div>
+          <div class="mc-sub">3 devices paired</div>
+        </div>
+      </div>
+      <div class="cards-row">
+        <div class="metric-card">
+          <i class="ti ti-location mc-icon" aria-hidden="true"></i>
+          <div class="mc-label">GPS</div>
+          <div class="mc-value" style="font-size:16px">Active</div>
+          <div class="mc-sub">±3 m accuracy</div>
+        </div>
+        <div class="metric-card">
+          <i class="ti ti-camera mc-icon" aria-hidden="true"></i>
+          <div class="mc-label">Camera</div>
+          <div class="mc-value" style="font-size:14px">50MP+48MP</div>
+          <div class="mc-sub">Triple rear system</div>
+        </div>
+      </div>
+
+      <!-- CPU core breakdown -->
+      <div class="section-title" style="margin-top:4px"><i class="ti ti-cpu" aria-hidden="true"></i>CPU cores</div>
+      <div class="cores-card" id="cores-card"></div>
+    </section>
+
+  </main>
+
+  <!-- Bottom Navigation Bar -->
+  <nav class="bottom-nav" aria-label="Bottom navigation">
+    <button class="nav-item active" data-section="overview" onclick="navTo(this,'overview')">
+      <i class="ti ti-home"></i><span>Overview</span>
+    </button>
+    <button class="nav-item" data-section="resources" onclick="navTo(this,'resources')">
+      <i class="ti ti-cpu"></i><span>Resources</span>
+    </button>
+    <button class="nav-item" data-section="network" onclick="navTo(this,'network')">
+      <i class="ti ti-wifi"></i><span>Network</span>
+    </button>
+    <button class="nav-item" data-section="processes" onclick="navTo(this,'processes')">
+      <i class="ti ti-list"></i><span>Processes</span>
+    </button>
+    <button class="nav-item" data-section="sensors" onclick="navTo(this,'sensors')">
+      <i class="ti ti-radar"></i><span>Sensors</span>
+    </button>
+  </nav>
+
+  <!-- FAB -->
+  <button class="fab" onclick="refresh()" aria-label="Refresh data">
+    <i class="ti ti-refresh"></i>
+  </button>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

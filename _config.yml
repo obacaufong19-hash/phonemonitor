@@ -1,0 +1,6 @@
+# Jekyll configuration for GitHub Pages
+# Disables Jekyll processing so HTML/CSS/JS is served as-is
+plugins: []
+exclude:
+  - "*.md"
+  - "node_modules"
