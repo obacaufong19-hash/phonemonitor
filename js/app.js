@@ -1,183 +1,323 @@
 /**
- * SysMonitor — Main Application
- * Handles rendering, live updates, navigation, and Chart.js
+ * SysMonitor — Application Logic
+ * Uses real Web APIs via DeviceData, with clear N/A labels where unavailable.
  */
 
-/* ============================================================
-   STATE
-   ============================================================ */
-let state = JSON.parse(JSON.stringify(INITIAL_STATE));
-let netHistory = JSON.parse(JSON.stringify(NETWORK_HISTORY));
+/* ─── State ─────────────────────────────────────────────── */
+let uptimeStart = Date.now();
 let netChart = null;
-let uptimeSeconds = state.uptime.h * 3600 + state.uptime.m * 60;
 let activeSection = 'overview';
+let storageInfo = null;
 
-/* ============================================================
-   HELPERS
-   ============================================================ */
-function rnd(min, max, decimals = 0) {
-  const val = Math.random() * (max - min) + min;
-  return decimals === 0 ? Math.round(val) : parseFloat(val.toFixed(decimals));
+// Rolling network history (use real downlink when available)
+const netHistory = {
+  dl: Array(12).fill(0),
+  ul: Array(12).fill(0),
+  labels: Array.from({ length: 12 }, (_, i) => `-${(11 - i) * 5}s`),
+};
+
+/* ─── Helpers ───────────────────────────────────────────── */
+function $(id) { return document.getElementById(id); }
+
+function setText(id, val, fallback = 'N/A') {
+  const el = $(id);
+  if (el) el.textContent = (val !== null && val !== undefined) ? val : fallback;
 }
 
-function clamp(val, min, max) {
-  return Math.min(max, Math.max(min, val));
-}
-
-function jitter(val, delta, min = 0, max = 100) {
-  return clamp(val + rnd(-delta, delta), min, max);
-}
-
-function gaugeOffset(pct, r = 32) {
-  const circ = 2 * Math.PI * r;
-  return (circ * (1 - pct / 100)).toFixed(1);
+function setWidth(id, pct) {
+  const el = $(id);
+  if (el) el.style.width = Math.round(pct) + '%';
 }
 
 function progressClass(pct) {
+  if (pct === null) return '';
   if (pct >= 85) return 'crit';
   if (pct >= 65) return 'warn';
   return '';
 }
 
-/* ============================================================
-   CLOCK & UPTIME
-   ============================================================ */
+function gaugeOffset(pct, r = 32) {
+  const circ = 2 * Math.PI * r;
+  return (circ * (1 - (pct || 0) / 100)).toFixed(1);
+}
+
+function formatUptime() {
+  const s = Math.floor((Date.now() - uptimeStart) / 1000);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${sec}s`;
+  return `${sec}s`;
+}
+
+/* ─── Clock ─────────────────────────────────────────────── */
 function updateClock() {
   const now = new Date();
   const h = now.getHours().toString().padStart(2, '0');
   const m = now.getMinutes().toString().padStart(2, '0');
-  document.getElementById('status-time').textContent = `${h}:${m}`;
+  setText('status-time', `${h}:${m}`);
 }
 
-function updateUptime() {
-  uptimeSeconds++;
-  const h = Math.floor(uptimeSeconds / 3600);
-  const m = Math.floor((uptimeSeconds % 3600) / 60);
-  document.getElementById('uptime-val').textContent = `${h}h ${m}m`;
+/* ─── Hero / Device Info ────────────────────────────────── */
+function renderDeviceInfo() {
+  const platform = DeviceData.getPlatform();
+  const deviceName = DeviceData.getDeviceName();
+  const cores = DeviceData.getCoreCount();
+  const memGB = DeviceData.getDeviceMemoryGB();
+
+  setText('device-name', deviceName);
+
+  // Build model line
+  const ua = navigator.userAgent;
+  const isAndroid = /Android/i.test(ua);
+  setText('device-model', `${platform.os} ${platform.version} · ${navigator.language} · ${screen.width}×${screen.height}`);
+
+  // Chips
+  setText('chip-cpu', cores ? `${cores} cores` : 'CPU');
+  setText('chip-ram', memGB ? `${memGB} GB RAM` : 'RAM');
+  setText('chip-stor', 'Storage');
+
+  // Android version chip
+  const androidChip = $('chip-android');
+  if (androidChip) {
+    androidChip.textContent = isAndroid
+      ? `Android ${platform.version}`
+      : platform.os;
+  }
 }
 
-/* ============================================================
-   RENDER GAUGES
-   ============================================================ */
-function updateGauges() {
-  const fields = [
-    { ring: 'cpu-ring', text: 'cpu-gauge-text', val: state.cpu },
-    { ring: 'ram-ring', text: 'ram-gauge-text', val: state.ram },
-    { ring: 'gpu-ring', text: 'gpu-gauge-text', val: state.gpu },
-  ];
-  fields.forEach(f => {
-    const ring = document.getElementById(f.ring);
-    const txt  = document.getElementById(f.text);
-    if (ring) ring.style.strokeDashoffset = gaugeOffset(f.val);
-    if (txt)  txt.textContent = Math.round(f.val) + '%';
-  });
+/* ─── Battery ───────────────────────────────────────────── */
+function updateBattery() {
+  const pct  = DeviceData.getBatteryLevel();
+  const charging = DeviceData.isCharging();
+  const timeStr  = DeviceData.getBatteryTimeLeft();
+
+  setText('bat-pct', pct !== null ? `${pct}%` : 'N/A');
+  setText('bat-time', timeStr || (pct !== null ? `${pct}% charged` : 'Battery API unavailable'));
+
+  // Update resource bar
+  updateResourceBar('bat', pct, false);
+
+  // Gauge
+  updateGauge('bat-ring', 'bat-gauge-text', pct, '#AD1457');
+
+  // Battery icon in status bar
+  const batIcon = $('bat-status-icon');
+  if (batIcon && pct !== null) {
+    if (charging) batIcon.className = 'ti ti-battery-charging';
+    else if (pct > 80) batIcon.className = 'ti ti-battery-4';
+    else if (pct > 50) batIcon.className = 'ti ti-battery-3';
+    else if (pct > 20) batIcon.className = 'ti ti-battery-2';
+    else batIcon.className = 'ti ti-battery-1';
+  }
+
+  // Metric card charging label
+  const chargingEl = $('charging-status');
+  if (chargingEl) {
+    if (charging === null) chargingEl.textContent = '';
+    else chargingEl.textContent = charging ? '⚡ Charging' : 'On battery';
+  }
 }
 
-/* ============================================================
-   RENDER RESOURCE LIST
-   ============================================================ */
-const RESOURCES = [
-  { id: 'cpu',  label: n => `CPU · ${Math.round(DEVICE.cores * n / 100) + 1} cores active`, icon: 'ti-cpu',                   cls: 'ri-cpu',  key: 'cpu' },
-  { id: 'ram',  label: n => `RAM · ${(DEVICE.totalRam * n / 100).toFixed(1)} GB / ${DEVICE.totalRam} GB`, icon: 'ti-database', cls: 'ri-ram',  key: 'ram' },
-  { id: 'gpu',  label: () => `GPU · ${DEVICE.gpuModel}`,                                  icon: 'ti-device-desktop-analytics', cls: 'ri-gpu',  key: 'gpu' },
-  { id: 'stor', label: () => `Storage · ${DEVICE.usedStorage} GB / ${DEVICE.totalStorage} GB`, icon: 'ti-device-sd-card',   cls: 'ri-stor', key: 'storage' },
-  { id: 'bat',  label: () => `Battery · ${DEVICE.batteryCapacity} mAh · Charging`,        icon: 'ti-battery-3',               cls: 'ri-bat',  key: 'battery' },
-];
+/* ─── Memory ────────────────────────────────────────────── */
+function updateMemory() {
+  const totalGB = DeviceData.getDeviceMemoryGB();
+  const usedMB  = DeviceData.getUsedMemoryMB();
+  const pct     = DeviceData.getMemoryPct();
 
-function renderResourceList() {
-  const container = document.getElementById('resource-list');
-  if (!container) return;
+  // RAM gauge & bar
+  updateGauge('ram-ring', 'ram-gauge-text', pct, '#2E7D32');
+  updateResourceBar('ram', pct, false);
 
-  container.innerHTML = RESOURCES.map(r => {
-    const val = Math.round(state[r.key]);
-    const cls = progressClass(val);
-    return `
-      <div class="resource-row">
-        <div class="resource-icon ${r.cls}" aria-hidden="true">
-          <i class="ti ${r.icon}"></i>
-        </div>
-        <div class="resource-info">
-          <div class="resource-name">${r.label(val)}</div>
-          <div class="progress-track">
-            <div class="progress-fill ${cls}" id="bar-${r.id}" style="width:${val}%"></div>
-          </div>
-        </div>
-        <div class="resource-pct" id="pct-${r.id}">${val}%</div>
-      </div>`;
-  }).join('');
-}
-
-function updateResourceBars() {
-  RESOURCES.forEach(r => {
-    const val = Math.round(state[r.key]);
-    const bar = document.getElementById(`bar-${r.id}`);
-    const pct = document.getElementById(`pct-${r.id}`);
-    if (bar) {
-      bar.style.width = val + '%';
-      bar.className = `progress-fill ${progressClass(val)}`;
+  // Resource row label
+  const ramLabel = $('ram-label');
+  if (ramLabel) {
+    if (usedMB !== null && totalGB) {
+      ramLabel.textContent = `RAM · ${(usedMB / 1024).toFixed(1)} GB used · ${totalGB} GB device`;
+    } else if (totalGB) {
+      ramLabel.textContent = `RAM · ${totalGB} GB device memory`;
+    } else {
+      ramLabel.textContent = `RAM · deviceMemory API unavailable`;
     }
-    if (pct) pct.textContent = val + '%';
-  });
+  }
+
+  // Metric card
+  setText('ram-metric', pct !== null ? `${pct}%` : (totalGB ? `${totalGB} GB` : 'N/A'));
+  setText('ram-sub', usedMB !== null ? `${usedMB} MB JS heap used` : (totalGB ? `${totalGB} GB reported` : 'Limited in this browser'));
 }
 
-/* ============================================================
-   RENDER METRICS
-   ============================================================ */
-function updateMetrics() {
-  const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+/* ─── Network ───────────────────────────────────────────── */
+function updateNetwork() {
+  const online   = DeviceData.isOnline();
+  const type     = DeviceData.getConnectionType();
+  const dl       = DeviceData.getDownlinkMbps();
+  const rtt      = DeviceData.getRttMs();
+  const saveData = DeviceData.isSaveData();
 
-  set('cpu-temp', Math.round(state.cpuTemp) + '°C');
-  set('bat-pct', Math.round(state.battery) + '%');
-  set('bat-time', `~${Math.round((state.battery / 100) * 7.5 * 10) / 10}h left`);
-  set('proc-count', state.procCount);
-  set('proc-total', `${state.procCount} running`);
+  setText('net-online', online ? 'Online' : 'Offline');
+  setText('net-type', type ? type.toUpperCase() : (online ? 'Connected' : 'Offline'));
+  setText('net-dl', dl !== null ? `↓ ${dl.toFixed(1)}` : '↓ --');
+  setText('net-ul', '--');  // Upload speed not exposed by browser APIs
+  setText('net-lat', rtt !== null ? `${rtt} ms` : '--');
+  setText('net-save', saveData ? 'On' : 'Off');
+
+  // Network connection type in detail
+  const conn = DeviceData.connection;
+  let detail = online ? 'Connected' : 'No connection';
+  if (conn) {
+    const parts = [];
+    if (conn.type && conn.type !== 'unknown') parts.push(conn.type);
+    if (conn.effectiveType) parts.push(conn.effectiveType);
+    if (conn.downlink) parts.push(`${conn.downlink} Mbps`);
+    if (parts.length) detail = parts.join(' · ');
+  }
+  setText('net-detail', detail);
+
+  // SSID — browsers cannot read WiFi SSID (OS restriction)
+  setText('net-ssid', 'Network');
+
+  // Connection badge
+  const badge = $('net-badge');
+  if (badge) {
+    badge.textContent = online ? 'Online' : 'Offline';
+    badge.className   = `status-badge ${online ? 'connected' : 'disconnected'}`;
+  }
+
+  // Network chart history
+  if (dl !== null) {
+    netHistory.dl.shift(); netHistory.dl.push(parseFloat(dl.toFixed(1)));
+  }
+  // Upload not available from browser — pad with zero
+  netHistory.ul.shift(); netHistory.ul.push(0);
+
+  updateNetworkChart();
 }
 
-/* ============================================================
-   RENDER PROCESSES
-   ============================================================ */
-function renderProcessList() {
-  const container = document.getElementById('proc-list');
+/* ─── CPU (limited) ─────────────────────────────────────── */
+function updateCpu() {
+  const cores = DeviceData.getCoreCount();
+
+  // Browser cannot give CPU %, show core count only
+  setText('cpu-metric', cores ? `${cores}` : 'N/A');
+  setText('cpu-sub', cores ? `logical cores` : 'hardwareConcurrency N/A');
+
+  // Gauge — cannot show real %, show indeterminate style
+  const cpuGaugeText = $('cpu-gauge-text');
+  if (cpuGaugeText) cpuGaugeText.textContent = cores ? `${cores}c` : 'N/A';
+
+  // Resource row
+  const cpuLabel = $('cpu-label');
+  if (cpuLabel) cpuLabel.textContent = cores
+    ? `CPU · ${cores} logical cores · usage unavailable in browser`
+    : 'CPU · hardwareConcurrency unavailable';
+
+  // Show a static shimmer bar so it's clearly labelled
+  const bar = $('bar-cpu');
+  if (bar) {
+    bar.style.width = '0%';
+    bar.style.background = 'var(--md-outline-variant)';
+  }
+  const pctEl = $('pct-cpu');
+  if (pctEl) pctEl.textContent = 'N/A';
+}
+
+/* ─── Storage ───────────────────────────────────────────── */
+async function updateStorage() {
+  storageInfo = await DeviceData.getStorageEstimate();
+
+  const storLabel = $('stor-label');
+  if (storLabel) {
+    if (storageInfo) {
+      storLabel.textContent = `Storage · ${storageInfo.used} GB used · ${storageInfo.total} GB quota`;
+    } else {
+      storLabel.textContent = 'Storage · StorageManager API unavailable';
+    }
+  }
+
+  const pct = storageInfo?.pct ?? null;
+  updateResourceBar('stor', pct, false);
+  const storPct = $('pct-stor');
+  if (storPct) storPct.textContent = pct !== null ? `${pct}%` : 'N/A';
+}
+
+/* ─── Display & Platform ────────────────────────────────── */
+function updateDisplaySensors() {
+  const res = DeviceData.getLogicalRes();
+  const physRes = DeviceData.getScreenRes();
+  const dpr = DeviceData.getPixelRatio();
+  const depth = DeviceData.getColorDepth();
+
+  setText('display-res', `${physRes}`);
+  setText('display-dpr', `${dpr}x DPR`);
+  setText('display-depth', depth ? `${depth}-bit color` : '');
+
+  // Screen orientation
+  const orient = screen.orientation?.type || 'unknown';
+  setText('display-orient', orient.replace('-primary', '').replace('-secondary', ''));
+
+  // Touch support
+  const touch = navigator.maxTouchPoints > 0;
+  setText('touch-points', touch ? `${navigator.maxTouchPoints} touch points` : 'No touch');
+
+  // Language & time zone
+  setText('device-lang', navigator.language || 'N/A');
+  setText('device-tz', Intl.DateTimeFormat().resolvedOptions().timeZone || 'N/A');
+
+  // Cores card
+  renderCoresCard();
+}
+
+/* ─── Cores Card ────────────────────────────────────────── */
+function renderCoresCard() {
+  const container = $('cores-card');
   if (!container) return;
+  const cores = DeviceData.getCoreCount() || 4;
 
-  const sorted = [...state.processes].sort((a, b) => b.cpu - a.cpu);
-  container.innerHTML = sorted.map(p => `
-    <div class="proc-row">
-      <div class="proc-dot" style="background:${p.color}"></div>
-      <div class="proc-name">${p.name}</div>
-      <div class="proc-bar-wrap">
-        <div class="proc-bar" style="width:${Math.min(100, (p.cpu / 25) * 100).toFixed(0)}%; background:${p.color}"></div>
-      </div>
-      <div class="proc-val">${p.cpu.toFixed(1)}%</div>
-    </div>`).join('');
-}
-
-/* ============================================================
-   RENDER CPU CORES
-   ============================================================ */
-function renderCores() {
-  const container = document.getElementById('cores-card');
-  if (!container) return;
-
-  container.innerHTML = state.cores.map((val, i) => `
+  container.innerHTML = Array.from({ length: cores }, (_, i) => `
     <div class="core-item">
       <div class="core-bar-wrap">
-        <div class="core-bar-fill" style="height:${val}%"></div>
+        <div class="core-bar-fill" id="core-bar-${i}" style="height:0%"></div>
       </div>
       <div class="core-label">C${i}</div>
-      <div class="core-val">${val}%</div>
+      <div class="core-val" id="core-val-${i}">N/A</div>
     </div>`).join('');
 }
 
-/* ============================================================
-   NETWORK CHART (Chart.js)
-   ============================================================ */
-function initNetworkChart() {
-  const canvas = document.getElementById('netChart');
-  if (!canvas || netChart) return;
+/* ─── Resource Bar helper ───────────────────────────────── */
+function updateResourceBar(id, pct, animate = true) {
+  const bar = $(`bar-${id}`);
+  const txt = $(`pct-${id}`);
+  if (bar) {
+    bar.style.width = pct !== null ? Math.round(pct) + '%' : '0%';
+    bar.className   = `progress-fill ${progressClass(pct)}`;
+    if (pct === null) bar.style.background = 'var(--md-outline-variant)';
+  }
+  if (txt) txt.textContent = pct !== null ? `${Math.round(pct)}%` : 'N/A';
+}
 
+/* ─── Gauge helper ──────────────────────────────────────── */
+function updateGauge(ringId, textId, pct, color) {
+  const ring = $(ringId);
+  const txt  = $(textId);
+  if (ring) {
+    if (pct !== null) {
+      ring.style.strokeDashoffset = gaugeOffset(pct);
+      ring.style.stroke = color;
+    } else {
+      ring.style.strokeDashoffset = gaugeOffset(0);
+      ring.style.stroke = 'var(--md-outline-variant)';
+    }
+  }
+  if (txt) txt.textContent = pct !== null ? `${Math.round(pct)}%` : 'N/A';
+}
+
+/* ─── Network Chart ─────────────────────────────────────── */
+function initNetworkChart() {
+  const canvas = $('netChart');
+  if (!canvas || netChart) return;
   const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-  const gridColor = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)';
+  const gridColor  = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)';
   const labelColor = isDark ? '#899294' : '#6F797A';
 
   netChart = new Chart(canvas, {
@@ -190,48 +330,33 @@ function initNetworkChart() {
           data: netHistory.dl,
           borderColor: '#006874',
           backgroundColor: 'rgba(0,104,116,0.10)',
-          borderWidth: 2,
-          pointRadius: 0,
-          fill: true,
-          tension: 0.4,
+          borderWidth: 2, pointRadius: 0, fill: true, tension: 0.4,
         },
         {
-          label: 'Upload',
+          label: 'Upload (unavailable)',
           data: netHistory.ul,
           borderColor: '#E65100',
-          backgroundColor: 'rgba(230,81,0,0.08)',
-          borderWidth: 2,
-          pointRadius: 0,
-          fill: true,
-          tension: 0.4,
+          backgroundColor: 'rgba(0,0,0,0)',
+          borderWidth: 1, pointRadius: 0, fill: false, tension: 0.4,
           borderDash: [4, 3],
         },
       ],
     },
     options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      animation: { duration: 400 },
+      responsive: true, maintainAspectRatio: false, animation: { duration: 400 },
       plugins: {
         legend: { display: false },
         tooltip: {
-          mode: 'index',
-          intersect: false,
           callbacks: {
-            label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)} Mbps`,
+            label: ctx => ctx.datasetIndex === 0
+              ? `Download: ${ctx.parsed.y.toFixed(1)} Mbps`
+              : `Upload: not available in browser`,
           },
         },
       },
       scales: {
-        x: {
-          grid: { color: gridColor },
-          ticks: { color: labelColor, font: { size: 10 }, maxTicksLimit: 6 },
-        },
-        y: {
-          grid: { color: gridColor },
-          ticks: { color: labelColor, font: { size: 10 }, callback: v => v + 'M' },
-          min: 0,
-        },
+        x: { grid: { color: gridColor }, ticks: { color: labelColor, font: { size: 10 }, maxTicksLimit: 6 } },
+        y: { grid: { color: gridColor }, ticks: { color: labelColor, font: { size: 10 }, callback: v => v + 'M' }, min: 0 },
       },
     },
   });
@@ -239,192 +364,130 @@ function initNetworkChart() {
 
 function updateNetworkChart() {
   if (!netChart) return;
-
-  netHistory.dl.shift(); netHistory.dl.push(parseFloat(state.network.dl.toFixed(1)));
-  netHistory.ul.shift(); netHistory.ul.push(parseFloat(state.network.ul.toFixed(1)));
-
-  netChart.data.datasets[0].data = netHistory.dl;
-  netChart.data.datasets[1].data = netHistory.ul;
+  netChart.data.datasets[0].data = [...netHistory.dl];
+  netChart.data.datasets[1].data = [...netHistory.ul];
   netChart.update('none');
 }
 
-function updateNetworkUI() {
-  const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
-  set('net-dl', `↓ ${state.network.dl.toFixed(1)}`);
-  set('net-ul', `↑ ${state.network.ul.toFixed(1)}`);
-  set('net-lat', `${state.network.latency} ms`);
-  set('net-data', `${state.network.dataUsed.toFixed(1)} GB`);
+/* ─── Uptime & Metrics ──────────────────────────────────── */
+function updateMiscMetrics() {
+  setText('uptime-val', formatUptime());
+  // Page performance
+  if (performance.memory) {
+    const mb = Math.round(performance.memory.usedJSHeapSize / 1048576);
+    setText('perf-mem', `${mb} MB`);
+  }
 }
 
-/* ============================================================
-   SIMULATE LIVE DATA UPDATE
-   ============================================================ */
-function simulateTick() {
-  // Jitter main stats
-  state.cpu     = jitter(state.cpu, 4, 10, 95);
-  state.ram     = jitter(state.ram, 2, 40, 90);
-  state.gpu     = jitter(state.gpu, 5, 5, 80);
-  state.cpuTemp = jitter(state.cpuTemp, 1.5, 32, 60);
-
-  // Battery drains slightly (simulating)
-  state.battery = Math.max(10, state.battery - 0.01);
-
-  // Network
-  state.network.dl = jitter(state.network.dl, 8, 5, 100);
-  state.network.ul = jitter(state.network.ul, 4, 1, 50);
-  state.network.latency = rnd(8, 28);
-  state.network.dataUsed += 0.001;
-
-  // Processes
-  state.processes.forEach(p => {
-    p.cpu = clamp(p.cpu + rnd(-2, 2, 1), 0.5, 30);
-  });
-
-  // Cores
-  state.cores = state.cores.map(c => jitter(c, 8, 5, 98));
-
-  // Process count occasionally shifts
-  if (Math.random() < 0.1) state.procCount += rnd(-3, 3);
-  state.procCount = clamp(state.procCount, 120, 180);
-
-  // Update UI
-  updateMetrics();
-  updateGauges();
-  updateResourceBars();
-  updateNetworkUI();
-  updateNetworkChart();
-  renderProcessList();
-  renderCores();
-  updateUptime();
+/* ─── Battery event listeners ───────────────────────────── */
+function attachBatteryListeners() {
+  if (!DeviceData.battery) return;
+  DeviceData.battery.addEventListener('levelchange',  updateBattery);
+  DeviceData.battery.addEventListener('chargingchange', updateBattery);
+  DeviceData.battery.addEventListener('chargingtimechange', updateBattery);
+  DeviceData.battery.addEventListener('dischargingtimechange', updateBattery);
 }
 
-/* ============================================================
-   FULL REFRESH (FAB button)
-   ============================================================ */
-function refresh() {
-  const fab = document.querySelector('.fab');
-  fab.classList.add('spinning');
-  setTimeout(() => fab.classList.remove('spinning'), 600);
-
-  // Randomize everything dramatically
-  state.cpu     = rnd(20, 90);
-  state.ram     = rnd(50, 85);
-  state.gpu     = rnd(10, 75);
-  state.battery = rnd(30, 100);
-  state.cpuTemp = rnd(33, 58);
-  state.network.dl = rnd(10, 100, 1);
-  state.network.ul = rnd(5, 40, 1);
-
-  state.processes.forEach(p => { p.cpu = rnd(0.5, 25, 1); });
-  state.cores = state.cores.map(() => rnd(5, 95));
-
-  updateMetrics();
-  updateGauges();
-  renderResourceList();
-  renderProcessList();
-  renderCores();
-  updateNetworkUI();
-  updateNetworkChart();
+/* ─── Network event listeners ───────────────────────────── */
+function attachNetworkListeners() {
+  window.addEventListener('online',  updateNetwork);
+  window.addEventListener('offline', updateNetwork);
+  if (DeviceData.connection) {
+    DeviceData.connection.addEventListener('change', updateNetwork);
+  }
 }
 
-/* ============================================================
-   NAVIGATION
-   ============================================================ */
+/* ─── Navigation ────────────────────────────────────────── */
 function navTo(btn, section) {
-  // Update nav buttons
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
   btn.classList.add('active');
-
-  // Update sections
   document.querySelectorAll('.scroll-area section').forEach(el => el.classList.remove('active'));
-  const target = document.getElementById(section);
+  const target = $(section);
   if (target) target.classList.add('active');
-
   activeSection = section;
-
-  // Init chart when network tab shown
-  if (section === 'network') {
-    setTimeout(initNetworkChart, 50);
-  }
-
-  // Close drawer if open
+  if (section === 'network') setTimeout(initNetworkChart, 50);
   closeDrawer();
-
-  // Scroll to top
-  document.getElementById('main-content').scrollTop = 0;
+  $('main-content').scrollTop = 0;
 }
 
-/* ============================================================
-   DRAWER
-   ============================================================ */
 function toggleDrawer() {
-  const drawer  = document.getElementById('drawer');
-  const overlay = document.getElementById('drawer-overlay');
-  const isOpen  = drawer.classList.contains('open');
-  if (isOpen) {
-    closeDrawer();
-  } else {
-    drawer.classList.add('open');
-    overlay.classList.add('open');
-  }
+  const d = $('drawer'), o = $('drawer-overlay');
+  const open = d.classList.contains('open');
+  if (open) closeDrawer();
+  else { d.classList.add('open'); o.classList.add('open'); }
 }
 
 function closeDrawer() {
-  document.getElementById('drawer').classList.remove('open');
-  document.getElementById('drawer-overlay').classList.remove('open');
+  $('drawer')?.classList.remove('open');
+  $('drawer-overlay')?.classList.remove('open');
 }
 
-// Handle drawer nav links
 document.querySelectorAll('.drawer-item[href]').forEach(link => {
   link.addEventListener('click', e => {
     e.preventDefault();
     const section = link.getAttribute('href').replace('#', '');
     const navBtn = document.querySelector(`.nav-item[data-section="${section}"]`);
     if (navBtn) navTo(navBtn, section);
-    // Update drawer active
     document.querySelectorAll('.drawer-item').forEach(el => el.classList.remove('active'));
     link.classList.add('active');
   });
 });
 
-/* ============================================================
-   THEME TOGGLE
-   ============================================================ */
-function toggleTheme() {
-  document.documentElement.classList.toggle('dark-override');
-  closeDrawer();
+/* ─── FAB Refresh ───────────────────────────────────────── */
+function refresh() {
+  const fab = document.querySelector('.fab');
+  fab.classList.add('spinning');
+  setTimeout(() => fab.classList.remove('spinning'), 600);
+  updateBattery();
+  updateMemory();
+  updateNetwork();
+  updateCpu();
+  updateStorage();
+  updateMiscMetrics();
 }
 
-/* ============================================================
-   INIT
-   ============================================================ */
-function init() {
-  // Show overview section by default
-  const overview = document.getElementById('overview');
-  if (overview) overview.classList.add('active');
+/* ─── Live tick ─────────────────────────────────────────── */
+function tick() {
+  updateBattery();
+  updateMemory();
+  updateNetwork();
+  updateMiscMetrics();
+  updateClock();
+}
 
-  // Populate device info
-  document.getElementById('device-name').textContent  = DEVICE.name;
-  document.getElementById('device-model').textContent = DEVICE.model;
-  document.getElementById('chip-cpu').textContent     = DEVICE.chipset;
-  document.getElementById('chip-ram').textContent     = `${DEVICE.totalRam} GB RAM`;
-  document.getElementById('chip-stor').textContent    = `${DEVICE.totalStorage} GB`;
+/* ─── INIT ──────────────────────────────────────────────── */
+async function init() {
+  // Boot DeviceData
+  await DeviceData.init();
 
-  // Initial render
-  updateMetrics();
-  updateGauges();
-  renderResourceList();
-  renderProcessList();
-  renderCores();
-  updateNetworkUI();
+  // Show overview
+  $('overview')?.classList.add('active');
+
+  // One-time renders
+  renderDeviceInfo();
+  updateDisplaySensors();
+  await updateStorage();
+
+  // Live data
+  updateBattery();
+  updateMemory();
+  updateNetwork();
+  updateCpu();
+  updateMiscMetrics();
   updateClock();
 
-  // Live tick every 2.5s
-  setInterval(simulateTick, 2500);
+  // Event listeners for real-time battery/network changes
+  attachBatteryListeners();
+  attachNetworkListeners();
+
+  // Polling tick every 5s (battery/memory/network)
+  setInterval(tick, 5000);
 
   // Clock every 30s
   setInterval(updateClock, 30000);
+
+  // Uptime every second
+  setInterval(() => setText('uptime-val', formatUptime()), 1000);
 }
 
-// Boot
 document.addEventListener('DOMContentLoaded', init);
